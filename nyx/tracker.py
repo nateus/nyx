@@ -649,8 +649,6 @@ class ConnectionTracker(Daemon):
       return list(self._connections)
 
   def get_traffic_samples(self):
-<<<<<<< HEAD
-=======
     """
     Provides per-connection byte deltas when the platform has reliable socket
     counters.
@@ -659,7 +657,6 @@ class ConnectionTracker(Daemon):
       unavailable
     """
 
->>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
     if self._traffic_resolver is None:
       self._traffic_resolver = nyx.traffic.best_resolver()
 
@@ -672,21 +669,17 @@ class ConnectionTracker(Daemon):
     return [TrafficSample(by_key[sample.key], sample.bytes_sent, sample.bytes_received) for sample in samples if sample.key in by_key]
 
   def get_traffic_status(self):
-<<<<<<< HEAD
-=======
     """
     Provides whether our traffic resolver is available, and why if not.
 
     :returns: :class:`nyx.traffic.TrafficStatus`
     """
 
->>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
     if self._traffic_resolver is None:
       self._traffic_resolver = nyx.traffic.best_resolver()
 
     return self._traffic_resolver.status()
 
-<<<<<<< HEAD
   def _record_traffic_samples(self, connections):
     samples = self.get_traffic_samples()
     status = self.get_traffic_status()
@@ -718,9 +711,6 @@ class ConnectionTracker(Daemon):
 
       for record in records:
         writer.record_ip_traffic(*record)
-
-=======
->>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
 
 class ResourceTracker(Daemon):
   """

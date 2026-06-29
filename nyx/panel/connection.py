@@ -750,7 +750,6 @@ def _draw_line_details(subwindow, x, y, line, width, attr):
   return x
 
 
-<<<<<<< HEAD
 def _traffic_label(line):
   if line.line_type != LineType.CONNECTION or line.entry.is_private():
     return ''
@@ -774,20 +773,6 @@ def _draw_data_sent_column(subwindow, x, y, line, width, attr):
     return x
 
   return subwindow.addstr(max(x, width - 34), y, '%13s' % str_tools.crop(label, 13), *attr)
-=======
-def _format_bytes(count):
-  return str_tools.size_label(count, 1)
-
-
-def _draw_data_sent_column(subwindow, x, y, line, width, attr):
-  if not CONFIG['connection_show_traffic'] or width < 105 or line.entry.is_private():
-    return x
-
-  traffic = nyx.cache().ip_traffic(line.connection.remote_address)
-  label = _format_bytes(traffic[4]) if traffic else 'unavailable'
-
-  return subwindow.addstr(max(x, width - 34), y, '%13s' % label, *attr)
->>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
 
 
 def _draw_right_column(subwindow, x, y, line, current_time, attr):
