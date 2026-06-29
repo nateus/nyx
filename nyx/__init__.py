@@ -44,10 +44,10 @@ Tor curses monitoring application.
 
 import collections
 import contextlib
-import distutils.spawn
 import getpass
 import os
 import platform
+import shutil
 import sys
 import threading
 import time
@@ -75,7 +75,7 @@ try:
   import stem.util.tor_tools
 except ImportError:
   for cmd, stem_install in PACKAGE_MANAGERS.items():
-    if distutils.spawn.find_executable(cmd):
+    if shutil.which(cmd):
       print("nyx requires stem, try running '%s'" % stem_install)
       sys.exit(1)
 
