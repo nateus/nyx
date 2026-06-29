@@ -14,6 +14,7 @@ from stem.control import EventType
 from stem.util import conf, log
 
 import nyx
+import nyx.tracker
 
 
 def conf_handler(key, value):
@@ -28,6 +29,8 @@ CONFIG = conf.config_dict('nyx', {
   'collector_interval': 1,
   'collector_retention_days': 30,
   'collector_log_events': 'NOTICE,WARN,ERR',
+  'connection_show_traffic': True,
+  'traffic_top_limit': 50,
 }, conf_handler)
 
 
@@ -74,6 +77,7 @@ class Collector(object):
     try:
       while self._is_running and self._controller.is_alive():
         self._event.wait(CONFIG['collector_interval'])
+        self._record_connection_traffic()
         self._trim_history()
     finally:
       self.stop()
@@ -98,6 +102,36 @@ class Collector(object):
 
     with self._cache.write() as writer:
       writer.trim_collector_history(cutoff)
+
+  def _record_connection_traffic(self):
+    tracker = nyx.tracker.get_connection_tracker()
+    samples = tracker.get_traffic_samples()
+    status = tracker.get_traffic_status()
+
+    if samples is None:
+      with self._cache.write() as writer:
+        writer.set_collector_status('traffic_counters', 'unavailable')
+        writer.set_collector_status('traffic_counters_reason', status.reason if status.reason else '')
+
+      return
+
+    consensus_tracker = nyx.tracker.get_consensus_tracker()
+
+    with self._cache.write() as writer:
+      writer.set_collector_status('traffic_counters', 'available')
+      writer.set_collector_status('traffic_counters_reason', '')
+
+      for sample in samples:
+        conn = sample.connection
+        relays = consensus_tracker.get_relay_fingerprints(conn.remote_address)
+        fingerprint = relays.get(conn.remote_port) if relays else None
+
+        if not fingerprint:
+          continue
+
+        nickname = consensus_tracker.get_relay_nickname(fingerprint)
+        country = self._controller.get_info('ip-to-country/%s' % conn.remote_address, None)
+        writer.record_ip_traffic(conn.remote_address, fingerprint, nickname, country, sample.bytes_sent, sample.bytes_received)
 
 
 def _configured_log_events():

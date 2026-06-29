@@ -8,6 +8,9 @@ import stem.response.events
 
 import nyx
 import nyx.collector
+import nyx.traffic
+from nyx.tracker import TrafficSample
+from stem.util import connection
 
 try:
   from unittest.mock import Mock, patch
@@ -75,3 +78,41 @@ class TestCollector(unittest.TestCase):
 
     self.assertEqual([(199.0, 3, 4)], cache.bandwidth_samples())
 
+  @patch('nyx.data_directory', Mock(return_value = None))
+  @patch('nyx.tracker.get_connection_tracker')
+  @patch('nyx.tracker.get_consensus_tracker')
+  def test_records_relay_traffic_only(self, consensus_tracker_mock, connection_tracker_mock):
+    relay_conn = connection.Connection('127.0.0.1', 9001, '75.119.206.243', 443, 'tcp', False)
+    private_conn = connection.Connection('127.0.0.1', 9001, '192.168.0.20', 443, 'tcp', False)
+
+    connection_tracker_mock().get_traffic_samples.return_value = [
+      TrafficSample(relay_conn, 100, 10),
+      TrafficSample(private_conn, 999, 1),
+    ]
+
+    consensus_tracker_mock().get_relay_fingerprints.side_effect = lambda address: {
+      '75.119.206.243': {443: '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'},
+      '192.168.0.20': {},
+    }[address]
+    consensus_tracker_mock().get_relay_nickname.return_value = 'caersidi'
+
+    controller = Controller()
+    controller.get_info = Mock(return_value = 'de')
+    collector = nyx.collector.Collector(controller)
+    collector._record_connection_traffic()
+
+    cache = nyx.cache()
+    self.assertEqual(100, cache.ip_traffic('75.119.206.243')[4])
+    self.assertEqual(None, cache.ip_traffic('192.168.0.20'))
+
+  @patch('nyx.data_directory', Mock(return_value = None))
+  @patch('nyx.tracker.get_connection_tracker')
+  def test_marks_traffic_unavailable(self, connection_tracker_mock):
+    connection_tracker_mock().get_traffic_samples.return_value = None
+    connection_tracker_mock().get_traffic_status.return_value = nyx.traffic.TrafficStatus('unavailable', 'bcc_missing')
+
+    collector = nyx.collector.Collector(Controller())
+    collector._record_connection_traffic()
+
+    self.assertEqual('unavailable', nyx.cache().collector_status('traffic_counters'))
+    self.assertEqual('bcc_missing', nyx.cache().collector_status('traffic_counters_reason'))
