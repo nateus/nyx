@@ -29,6 +29,9 @@ from stem.util import datetime_to_unix, conf, connection, enum, str_tools
 DETAILS_HEIGHT = 7
 
 EXIT_USAGE_WIDTH = 15
+DATA_SENT_WIDTH = 13
+RIGHT_COLUMN_WIDTH = 18
+MIN_DATA_SENT_PANEL_WIDTH = 80
 UPDATE_RATE = 5  # rate in seconds at which we refresh
 
 # cached information from our last _update() call
@@ -630,7 +633,7 @@ def _draw_line(subwindow, x, y, line, is_selected, width, current_time):
   x = _draw_address_column(subwindow, x, y, line, attr)
   x = _draw_line_details(subwindow, x + 2, y, line, width - 57 - 20, attr)
   x = _draw_data_sent_column(subwindow, x, y, line, width, attr)
-  _draw_right_column(subwindow, max(x, width - 18), y, line, current_time, attr)
+  _draw_right_column(subwindow, max(x, width - RIGHT_COLUMN_WIDTH), y, line, current_time, attr)
 
 
 def _draw_address_column(subwindow, x, y, line, attr):
@@ -764,7 +767,7 @@ def _traffic_label(line):
 
 
 def _draw_data_sent_column(subwindow, x, y, line, width, attr):
-  if not CONFIG['connection_show_traffic'] or width < 105:
+  if not CONFIG['connection_show_traffic'] or width < MIN_DATA_SENT_PANEL_WIDTH:
     return x
 
   label = _traffic_label(line)
@@ -772,7 +775,8 @@ def _draw_data_sent_column(subwindow, x, y, line, width, attr):
   if not label:
     return x
 
-  return subwindow.addstr(max(x, width - 34), y, '%13s' % str_tools.crop(label, 13), *attr)
+  traffic_x = max(x, width - RIGHT_COLUMN_WIDTH - DATA_SENT_WIDTH - 3)
+  return subwindow.addstr(traffic_x, y, ('%%%is' % DATA_SENT_WIDTH) % str_tools.crop(label, DATA_SENT_WIDTH), *attr)
 
 
 def _draw_right_column(subwindow, x, y, line, current_time, attr):

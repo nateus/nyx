@@ -239,6 +239,12 @@ class TestConnectionPanel(unittest.TestCase):
     rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(), 120, ())
     self.assertTrue('2.0 KB' in rendered.content)
 
+    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(), 90, ())
+    self.assertTrue('2.0 KB' in rendered.content)
+
+    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(), 79, ())
+    self.assertEqual('', rendered.content)
+
     rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
     self.assertTrue('unavailable' in rendered.content)
 
