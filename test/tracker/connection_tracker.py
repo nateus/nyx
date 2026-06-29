@@ -2,6 +2,7 @@ import time
 import unittest
 
 from nyx.tracker import ConnectionTracker
+import nyx.traffic
 
 from stem.util import connection
 
@@ -120,3 +121,32 @@ class TestConnectionTracker(unittest.TestCase):
       self.assertEqual(STEM_CONNECTIONS[1].remote_address, connections[1].remote_address)
       self.assertTrue(second_start_time < connections[1].start_time < time.time())
       self.assertFalse(connections[1].is_legacy)
+
+  @patch('nyx.tracker.tor_controller')
+  @patch('nyx.tracker.connection.get_connections')
+  @patch('nyx.tracker.system', Mock(return_value = Mock()))
+  @patch('stem.util.proc.is_available', Mock(return_value = False))
+  @patch('nyx.tracker.connection.system_resolvers', Mock(return_value = [connection.Resolver.NETSTAT]))
+  def test_traffic_samples(self, get_value_mock, tor_controller_mock):
+    tor_controller_mock().get_pid.return_value = 12345
+    tor_controller_mock().get_conf.return_value = '0'
+    get_value_mock.return_value = [STEM_CONNECTIONS[0]]
+
+    daemon = ConnectionTracker(0.04)
+    daemon._task(12345, 'tor')
+
+    traffic_resolver = nyx.traffic.ManualTrafficResolver()
+    key = nyx.traffic.connection_key(daemon.get_value()[0])
+    traffic_resolver.totals = [nyx.traffic.SocketTraffic(key, 100, 20)]
+    daemon._traffic_resolver = traffic_resolver
+
+    self.assertEqual([], daemon.get_traffic_samples())
+
+    traffic_resolver.totals = [nyx.traffic.SocketTraffic(key, 180, 35)]
+    samples = daemon.get_traffic_samples()
+
+    self.assertEqual(1, len(samples))
+    self.assertEqual(daemon.get_value()[0], samples[0].connection)
+    self.assertEqual(80, samples[0].bytes_sent)
+    self.assertEqual(15, samples[0].bytes_received)
+    self.assertEqual(nyx.traffic.TrafficStatus('available', None), daemon.get_traffic_status())

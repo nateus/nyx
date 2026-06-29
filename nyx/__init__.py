@@ -130,6 +130,7 @@ __all__ = [
   'panel',
   'popups',
   'starter',
+  'traffic',
   'tracker',
 ]
 

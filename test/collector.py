@@ -8,6 +8,7 @@ import stem.response.events
 
 import nyx
 import nyx.collector
+import nyx.traffic
 from nyx.tracker import TrafficSample
 from stem.util import connection
 
@@ -108,8 +109,10 @@ class TestCollector(unittest.TestCase):
   @patch('nyx.tracker.get_connection_tracker')
   def test_marks_traffic_unavailable(self, connection_tracker_mock):
     connection_tracker_mock().get_traffic_samples.return_value = None
+    connection_tracker_mock().get_traffic_status.return_value = nyx.traffic.TrafficStatus('unavailable', 'bcc_missing')
 
     collector = nyx.collector.Collector(Controller())
     collector._record_connection_traffic()
 
     self.assertEqual('unavailable', nyx.cache().collector_status('traffic_counters'))
+    self.assertEqual('bcc_missing', nyx.cache().collector_status('traffic_counters_reason'))

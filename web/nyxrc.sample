@@ -24,6 +24,7 @@ acs_support true        # Uses ACS (alternate character set) for nice borders.
 
 redraw_rate 5           # Seconds to await user input before redrawing.
 connection_rate 5       # Seconds between querying connections.
+traffic_resolver auto   # Backend for per-socket traffic counters.
 resource_rate 5         # Seconds between querying process resource usage.
 port_usage_rate 5       # Seconds between querying processes using ports.
 

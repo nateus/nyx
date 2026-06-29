@@ -104,11 +104,14 @@ class Collector(object):
       writer.trim_collector_history(cutoff)
 
   def _record_connection_traffic(self):
-    samples = nyx.tracker.get_connection_tracker().get_traffic_samples()
+    tracker = nyx.tracker.get_connection_tracker()
+    samples = tracker.get_traffic_samples()
+    status = tracker.get_traffic_status()
 
     if samples is None:
       with self._cache.write() as writer:
         writer.set_collector_status('traffic_counters', 'unavailable')
+        writer.set_collector_status('traffic_counters_reason', status.reason if status.reason else '')
 
       return
 
@@ -116,6 +119,7 @@ class Collector(object):
 
     with self._cache.write() as writer:
       writer.set_collector_status('traffic_counters', 'available')
+      writer.set_collector_status('traffic_counters_reason', '')
 
       for sample in samples:
         conn = sample.connection

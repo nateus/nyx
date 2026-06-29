@@ -52,6 +52,7 @@ Background tasks for gathering information about the tor process.
 
 import collections
 import os
+import platform
 import time
 import threading
 
@@ -59,6 +60,7 @@ import nyx
 import stem.control
 import stem.descriptor.router_status_entry
 import stem.util.log
+import nyx.traffic
 
 from nyx import tor_controller
 from stem.util import conf, connection, enum, proc, str_tools, system
@@ -67,6 +69,7 @@ CONFIG = conf.config_dict('nyx', {
   'connection_rate': 5,
   'resource_rate': 5,
   'port_usage_rate': 5,
+  'traffic_resolver': 'auto',
 })
 
 UNABLE_TO_USE_ANY_RESOLVER_MSG = """
@@ -504,6 +507,7 @@ class ConnectionTracker(Daemon):
     self._connections = []
     self._start_times = {}  # connection => (unix_timestamp, is_legacy)
     self._custom_resolver = None
+    self._traffic_resolver = None
     self._is_first_run = True
 
     # Number of times in a row we've either failed with our current resolver or
@@ -523,7 +527,7 @@ class ConnectionTracker(Daemon):
     elif not self._resolvers:
       stem.util.log.notice("Tor connection information is unavailable. This is fine, but if you would like to have it please see https://nyx.torproject.org/#no_connections")
 
-    stem.util.log.info('Operating System: %s, Connection Resolvers: %s' % (os.uname()[0], ', '.join(self._resolvers)))
+    stem.util.log.info('Operating System: %s, Connection Resolvers: %s' % (platform.system(), ', '.join(self._resolvers)))
 
   def _task(self, process_pid, process_name):
     if self._custom_resolver:
@@ -645,14 +649,34 @@ class ConnectionTracker(Daemon):
   def get_traffic_samples(self):
     """
     Provides per-connection byte deltas when the platform has reliable socket
-    counters. Linux's proc connection tables only expose queue depths, not
-    cumulative per-socket totals, so most systems cannot provide this safely.
+    counters.
 
     :returns: **list** of :class:`~nyx.tracker.TrafficSample`, or **None** if
       unavailable
     """
 
-    return None
+    if self._traffic_resolver is None:
+      self._traffic_resolver = nyx.traffic.best_resolver()
+
+    samples = self._traffic_resolver.sample(self.get_value())
+
+    if samples is None:
+      return None
+
+    by_key = dict([(nyx.traffic.connection_key(conn), conn) for conn in self.get_value()])
+    return [TrafficSample(by_key[sample.key], sample.bytes_sent, sample.bytes_received) for sample in samples if sample.key in by_key]
+
+  def get_traffic_status(self):
+    """
+    Provides whether our traffic resolver is available, and why if not.
+
+    :returns: :class:`nyx.traffic.TrafficStatus`
+    """
+
+    if self._traffic_resolver is None:
+      self._traffic_resolver = nyx.traffic.best_resolver()
+
+    return self._traffic_resolver.status()
 
 
 class ResourceTracker(Daemon):
