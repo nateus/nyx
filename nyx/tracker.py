@@ -93,6 +93,12 @@ Connection = collections.namedtuple('Connection', [
   'is_legacy',  # boolean to indicate if the connection predated us
 ] + list(stem.util.connection.Connection._fields))
 
+TrafficSample = collections.namedtuple('TrafficSample', [
+  'connection',
+  'bytes_sent',
+  'bytes_received',
+])
+
 Resources = collections.namedtuple('Resources', [
   'cpu_sample',
   'cpu_average',
@@ -635,6 +641,18 @@ class ConnectionTracker(Daemon):
       return []
     else:
       return list(self._connections)
+
+  def get_traffic_samples(self):
+    """
+    Provides per-connection byte deltas when the platform has reliable socket
+    counters. Linux's proc connection tables only expose queue depths, not
+    cumulative per-socket totals, so most systems cannot provide this safely.
+
+    :returns: **list** of :class:`~nyx.tracker.TrafficSample`, or **None** if
+      unavailable
+    """
+
+    return None
 
 
 class ResourceTracker(Daemon):

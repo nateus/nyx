@@ -50,7 +50,7 @@ ENTRY_CACHE_REFERENCED = {}
 #   Control      Tor controller (nyx, vidalia, etc).
 
 Category = enum.Enum('INBOUND', 'OUTBOUND', 'EXIT', 'HIDDEN', 'SOCKS', 'CIRCUIT', 'DIRECTORY', 'CONTROL')
-SortAttr = enum.Enum('CATEGORY', 'UPTIME', 'IP_ADDRESS', 'PORT', 'FINGERPRINT', 'NICKNAME', 'COUNTRY')
+SortAttr = enum.Enum('CATEGORY', 'UPTIME', 'IP_ADDRESS', 'PORT', 'FINGERPRINT', 'NICKNAME', 'COUNTRY', 'DATA_SENT')
 LineType = enum.Enum('CONNECTION', 'CIRCUIT_HEADER', 'CIRCUIT')
 
 Line = collections.namedtuple('Line', [
@@ -73,6 +73,8 @@ CONFIG = conf.config_dict('nyx', {
   'attr.connection.category_color': {},
   'attr.connection.sort_color': {},
   'connection_order': [SortAttr.CATEGORY, SortAttr.IP_ADDRESS, SortAttr.UPTIME],
+  'connection_show_traffic': True,
+  'traffic_top_limit': 50,
   'resolve_processes': True,
   'show_addresses': True,
 }, conf_handler)
@@ -168,6 +170,9 @@ class Entry(object):
       return line.connection.start_time
     elif attr == SortAttr.COUNTRY:
       return line.locale if (line.locale and not self.is_private()) else at_end
+    elif attr == SortAttr.DATA_SENT:
+      traffic = nyx.cache().ip_traffic(line.connection.remote_address)
+      return -traffic[4] if traffic and not self.is_private() else 0
     else:
       return ''
 
@@ -400,6 +405,22 @@ class ConnectionPanel(nyx.panel.DaemonPanel):
 
       nyx.popups.show_counts('Exiting Port Usage', counts)
 
+    def _show_top_data_recipients():
+      counts = collections.OrderedDict()
+
+      for remote_address, fingerprint, nickname, country, bytes_sent, _, _, _ in nyx.cache().top_ip_traffic(CONFIG['traffic_top_limit']):
+        label = remote_address
+
+        if nickname:
+          label += ' %s' % nickname
+
+        if country:
+          label += ' (%s)' % country
+
+        counts[label] = bytes_sent
+
+      nyx.popups.show_counts('Top Data Recipients', counts)
+
     resolver = nyx.tracker.get_connection_tracker().get_custom_resolver()
     user_traffic_allowed = tor_controller().is_user_traffic_allowed()
 
@@ -408,6 +429,7 @@ class ConnectionPanel(nyx.panel.DaemonPanel):
       nyx.panel.KeyHandler('enter', 'show connection details', _show_details, key_func = lambda key: key.is_selection()),
       nyx.panel.KeyHandler('d', 'raw consensus descriptor', _show_descriptor),
       nyx.panel.KeyHandler('s', 'sort ordering', self._show_sort_dialog),
+      nyx.panel.KeyHandler('t', 'top data recipients', _show_top_data_recipients),
       nyx.panel.KeyHandler('r', 'connection resolver', _pick_connection_resolver, 'auto' if resolver is None else resolver),
     ]
 
@@ -607,6 +629,7 @@ def _draw_line(subwindow, x, y, line, is_selected, width, current_time):
 
   x = _draw_address_column(subwindow, x, y, line, attr)
   x = _draw_line_details(subwindow, x + 2, y, line, width - 57 - 20, attr)
+  x = _draw_data_sent_column(subwindow, x, y, line, width, attr)
   _draw_right_column(subwindow, max(x, width - 18), y, line, current_time, attr)
 
 
@@ -721,6 +744,20 @@ def _draw_line_details(subwindow, x, y, line, width, attr):
       return x
 
   return x
+
+
+def _format_bytes(count):
+  return str_tools.size_label(count, 1)
+
+
+def _draw_data_sent_column(subwindow, x, y, line, width, attr):
+  if not CONFIG['connection_show_traffic'] or width < 105 or line.entry.is_private():
+    return x
+
+  traffic = nyx.cache().ip_traffic(line.connection.remote_address)
+  label = _format_bytes(traffic[4]) if traffic else 'unavailable'
+
+  return subwindow.addstr(max(x, width - 34), y, '%13s' % label, *attr)
 
 
 def _draw_right_column(subwindow, x, y, line, current_time, attr):

@@ -179,7 +179,7 @@ stem.response.events.PARSE_NEWCONSENSUS_EVENTS = False
 
 PAUSE_TIME = 0.4
 
-SCHEMA_VERSION = 3  # version of our scheme, bump this if you change the following
+SCHEMA_VERSION = 4  # version of our scheme, bump this if you change the following
 SCHEMA = (
   'CREATE TABLE schema(version INTEGER)',
   'INSERT INTO schema(version) VALUES (%i)' % SCHEMA_VERSION,
@@ -195,6 +195,8 @@ SCHEMA = (
   'CREATE TABLE tor_log_events(timestamp REAL, type TEXT, message TEXT)',
   'CREATE INDEX tor_log_events_by_timestamp ON tor_log_events(timestamp)',
   'CREATE TABLE collector_status(key TEXT PRIMARY KEY, value TEXT)',
+  'CREATE TABLE ip_traffic(remote_address TEXT PRIMARY KEY, fingerprint TEXT, nickname TEXT, country TEXT, bytes_sent INTEGER, bytes_received INTEGER, first_seen REAL, last_seen REAL)',
+  'CREATE INDEX ip_traffic_by_bytes_sent ON ip_traffic(bytes_sent)',
 )
 
 SCHEMA_MIGRATIONS = {
@@ -205,6 +207,11 @@ SCHEMA_MIGRATIONS = {
     'CREATE INDEX IF NOT EXISTS tor_log_events_by_timestamp ON tor_log_events(timestamp)',
     'CREATE TABLE IF NOT EXISTS collector_status(key TEXT PRIMARY KEY, value TEXT)',
     'UPDATE schema SET version=3',
+  ),
+  3: (
+    'CREATE TABLE IF NOT EXISTS ip_traffic(remote_address TEXT PRIMARY KEY, fingerprint TEXT, nickname TEXT, country TEXT, bytes_sent INTEGER, bytes_received INTEGER, first_seen REAL, last_seen REAL)',
+    'CREATE INDEX IF NOT EXISTS ip_traffic_by_bytes_sent ON ip_traffic(bytes_sent)',
+    'UPDATE schema SET version=4',
   ),
 }
 
@@ -613,6 +620,13 @@ class Cache(object):
     result = self._query('SELECT value FROM collector_status WHERE key=?', key).fetchone()
     return result[0] if result else default
 
+  def ip_traffic(self, remote_address, default = None):
+    result = self._query('SELECT remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, first_seen, last_seen FROM ip_traffic WHERE remote_address=?', remote_address).fetchone()
+    return result if result else default
+
+  def top_ip_traffic(self, limit = 50):
+    return self._query('SELECT remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, first_seen, last_seen FROM ip_traffic ORDER BY bytes_sent DESC LIMIT ?', limit).fetchall()
+
   def _query(self, query, *param):
     """
     Performs a query on our cache.
@@ -663,12 +677,42 @@ class CacheWriter(object):
     timestamp = time.time() if timestamp is None else timestamp
     self._cache._query('INSERT INTO tor_log_events(timestamp, type, message) VALUES (?,?,?)', timestamp, event_type, message)
 
+  def record_ip_traffic(self, remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, timestamp = None):
+    timestamp = time.time() if timestamp is None else timestamp
+    bytes_sent, bytes_received = int(bytes_sent), int(bytes_received)
+    current = self._cache.ip_traffic(remote_address)
+
+    if current:
+      self._cache._query(
+        'UPDATE ip_traffic SET fingerprint=?, nickname=?, country=?, bytes_sent=?, bytes_received=?, last_seen=? WHERE remote_address=?',
+        fingerprint,
+        nickname,
+        country,
+        current[4] + bytes_sent,
+        current[5] + bytes_received,
+        timestamp,
+        remote_address,
+      )
+    else:
+      self._cache._query(
+        'INSERT INTO ip_traffic(remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?)',
+        remote_address,
+        fingerprint,
+        nickname,
+        country,
+        bytes_sent,
+        bytes_received,
+        timestamp,
+        timestamp,
+      )
+
   def set_collector_status(self, key, value):
     self._cache._query('INSERT OR REPLACE INTO collector_status(key, value) VALUES (?,?)', key, value)
 
   def trim_collector_history(self, before):
     self._cache._query('DELETE FROM bandwidth_samples WHERE timestamp<?', before)
     self._cache._query('DELETE FROM tor_log_events WHERE timestamp<?', before)
+    self._cache._query('DELETE FROM ip_traffic WHERE last_seen<?', before)
 
   def _record_bandwidth_peak(self, direction, bytes_per_second, timestamp):
     current = self._cache.bandwidth_peak(direction)

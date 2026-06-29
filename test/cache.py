@@ -86,7 +86,7 @@ class TestCache(unittest.TestCase):
       with patch('nyx.data_directory', Mock(return_value = cache_path)):
         cache = nyx.cache()
         self.assertEqual('caersidi', cache.relay_nickname('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'))
-        self.assertEqual(3, cache._query('SELECT version FROM schema').fetchone()[0])
+        self.assertEqual(4, cache._query('SELECT version FROM schema').fetchone()[0])
         self.assertEqual([], cache.bandwidth_samples())
     finally:
       if nyx.CACHE:
@@ -201,6 +201,18 @@ class TestCache(unittest.TestCase):
     self.assertEqual('true', cache.collector_status('running'))
 
   @patch('nyx.data_directory', Mock(return_value = None))
+  def test_ip_traffic_cache(self):
+    cache = nyx.cache()
+
+    with cache.write() as writer:
+      writer.record_ip_traffic('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 100, 20, 10.0)
+      writer.record_ip_traffic('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 50, 5, 20.0)
+      writer.record_ip_traffic('86.59.30.40', '9695DFC35FFEB861329B9F1AB04C46397020CE31', 'moria1', 'at', 500, 10, 30.0)
+
+    self.assertEqual(('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 150, 25, 10.0, 20.0), cache.ip_traffic('75.119.206.243'))
+    self.assertEqual(['86.59.30.40', '75.119.206.243'], [entry[0] for entry in cache.top_ip_traffic()])
+
+  @patch('nyx.data_directory', Mock(return_value = None))
   def test_collector_retention(self):
     cache = nyx.cache()
 
@@ -209,10 +221,12 @@ class TestCache(unittest.TestCase):
       writer.record_bandwidth_sample(30, 40, 200.0)
       writer.record_tor_log_event('WARN', 'old', 100.0)
       writer.record_tor_log_event('ERR', 'new', 200.0)
+      writer.record_ip_traffic('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 100, 20, 100.0)
       writer.trim_collector_history(150.0)
 
     self.assertEqual([(200.0, 30, 40)], cache.bandwidth_samples())
     self.assertEqual([(200.0, 'ERR', 'new')], cache.tor_log_events())
+    self.assertEqual(None, cache.ip_traffic('75.119.206.243'))
 
   @patch('nyx.data_directory', Mock(return_value = None))
   def test_record_relay_when_invalid(self):
