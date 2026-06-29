@@ -3,6 +3,8 @@ Unit tests for nyx.cache.
 """
 
 import re
+import os
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -39,17 +41,59 @@ class TestCache(unittest.TestCase):
     Create a new cache file, and ensure we can reload cached results.
     """
 
-    with tempfile.NamedTemporaryFile(suffix = '.sqlite') as tmp:
-      with patch('nyx.data_directory', Mock(return_value = tmp.name)):
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix = '.sqlite')
+    os.close(tmp_fd)
+
+    try:
+      with patch('nyx.data_directory', Mock(return_value = tmp_path)):
         cache = nyx.cache()
-        self.assertEqual((0, 'main', tmp.name), cache._query('PRAGMA database_list').fetchone())
+        self.assertEqual((0, 'main', tmp_path), cache._query('PRAGMA database_list').fetchone())
 
         with cache.write() as writer:
           writer.record_relay('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', '208.113.165.162', 1443, 'caersidi')
 
+        nyx.CACHE._conn.close()
         nyx.CACHE = None
         cache = nyx.cache()
         self.assertEqual('caersidi', cache.relay_nickname('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'))
+    finally:
+      if nyx.CACHE:
+        nyx.CACHE._conn.close()
+        nyx.CACHE = None
+
+      os.remove(tmp_path)
+
+  def test_schema_migration_preserves_history(self):
+    """
+    Migrates an existing cache rather than clearing it.
+    """
+
+    with tempfile.NamedTemporaryFile(suffix = '.sqlite', delete = False) as tmp:
+      cache_path = tmp.name
+
+    try:
+      conn = sqlite3.connect(cache_path)
+      conn.execute('CREATE TABLE schema(version INTEGER)')
+      conn.execute('INSERT INTO schema(version) VALUES (2)')
+      conn.execute('CREATE TABLE metadata(relays_updated_at REAL)')
+      conn.execute('INSERT INTO metadata(relays_updated_at) VALUES (0.0)')
+      conn.execute('CREATE TABLE relays(fingerprint TEXT PRIMARY KEY, address TEXT, or_port INTEGER, nickname TEXT)')
+      conn.execute('CREATE INDEX addresses ON relays(address)')
+      conn.execute('INSERT INTO relays(fingerprint, address, or_port, nickname) VALUES (?,?,?,?)', ('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', '208.113.165.162', 1443, 'caersidi'))
+      conn.commit()
+      conn.close()
+
+      with patch('nyx.data_directory', Mock(return_value = cache_path)):
+        cache = nyx.cache()
+        self.assertEqual('caersidi', cache.relay_nickname('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'))
+        self.assertEqual(3, cache._query('SELECT version FROM schema').fetchone()[0])
+        self.assertEqual([], cache.bandwidth_samples())
+    finally:
+      if nyx.CACHE:
+        nyx.CACHE._conn.close()
+        nyx.CACHE = None
+
+      os.remove(cache_path)
 
   @patch('nyx.data_directory', Mock(return_value = None))
   def test_relays_for_address(self):
@@ -139,6 +183,36 @@ class TestCache(unittest.TestCase):
       writer.record_relay('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', '128.31.0.34', 9101, 'moria1')
 
     self.assertEqual('moria1', cache.relay_nickname('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'))
+
+  @patch('nyx.data_directory', Mock(return_value = None))
+  def test_collector_bandwidth_cache(self):
+    cache = nyx.cache()
+
+    with cache.write() as writer:
+      writer.record_bandwidth_sample(10, 20, 100.0)
+      writer.record_bandwidth_sample(30, 15, 101.0)
+      writer.record_tor_log_event('NOTICE', 'bootstrapped', 102.0)
+      writer.set_collector_status('running', 'true')
+
+    self.assertEqual([(100.0, 10, 20), (101.0, 30, 15)], cache.bandwidth_samples())
+    self.assertEqual((30, 101.0), cache.bandwidth_peak('download'))
+    self.assertEqual((20, 100.0), cache.bandwidth_peak('upload'))
+    self.assertEqual([(102.0, 'NOTICE', 'bootstrapped')], cache.tor_log_events())
+    self.assertEqual('true', cache.collector_status('running'))
+
+  @patch('nyx.data_directory', Mock(return_value = None))
+  def test_collector_retention(self):
+    cache = nyx.cache()
+
+    with cache.write() as writer:
+      writer.record_bandwidth_sample(10, 20, 100.0)
+      writer.record_bandwidth_sample(30, 40, 200.0)
+      writer.record_tor_log_event('WARN', 'old', 100.0)
+      writer.record_tor_log_event('ERR', 'new', 200.0)
+      writer.trim_collector_history(150.0)
+
+    self.assertEqual([(200.0, 30, 40)], cache.bandwidth_samples())
+    self.assertEqual([(200.0, 'ERR', 'new')], cache.tor_log_events())
 
   @patch('nyx.data_directory', Mock(return_value = None))
   def test_record_relay_when_invalid(self):

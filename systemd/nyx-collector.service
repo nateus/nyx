@@ -1,0 +1,17 @@
+[Unit]
+Description=Nyx Tor history collector
+After=tor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nyx-collector
+Restart=on-failure
+RestartSec=5s
+
+# Run this service as the user that can access Tor's ControlSocket. On Debian
+# systems that is commonly debian-tor, though a per-user Tor setup should use
+# the matching user service instead.
+# User=debian-tor
+
+[Install]
+WantedBy=default.target
