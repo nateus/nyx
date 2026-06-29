@@ -44,10 +44,10 @@ Tor curses monitoring application.
 
 import collections
 import contextlib
-import distutils.spawn
 import getpass
 import os
 import platform
+import shutil
 import sys
 import threading
 import time
@@ -75,7 +75,7 @@ try:
   import stem.util.tor_tools
 except ImportError:
   for cmd, stem_install in PACKAGE_MANAGERS.items():
-    if distutils.spawn.find_executable(cmd):
+    if shutil.which(cmd):
       print("nyx requires stem, try running '%s'" % stem_install)
       sys.exit(1)
 
@@ -140,6 +140,10 @@ def conf_handler(key, value):
 
 
 CONFIG = stem.util.conf.config_dict('nyx', {
+  'collector_enabled': True,
+  'collector_interval': 1,
+  'collector_retention_days': 30,
+  'collector_log_events': 'NOTICE,WARN,ERR',
   'confirm_quit': True,
   'redraw_rate': 5,
   'show_graph': True,
@@ -175,7 +179,7 @@ stem.response.events.PARSE_NEWCONSENSUS_EVENTS = False
 
 PAUSE_TIME = 0.4
 
-SCHEMA_VERSION = 2  # version of our scheme, bump this if you change the following
+SCHEMA_VERSION = 3  # version of our scheme, bump this if you change the following
 SCHEMA = (
   'CREATE TABLE schema(version INTEGER)',
   'INSERT INTO schema(version) VALUES (%i)' % SCHEMA_VERSION,
@@ -185,7 +189,24 @@ SCHEMA = (
 
   'CREATE TABLE relays(fingerprint TEXT PRIMARY KEY, address TEXT, or_port INTEGER, nickname TEXT)',
   'CREATE INDEX addresses ON relays(address)',
+
+  'CREATE TABLE bandwidth_samples(timestamp REAL PRIMARY KEY, read_bytes INTEGER, written_bytes INTEGER)',
+  'CREATE TABLE bandwidth_peaks(direction TEXT PRIMARY KEY, bytes_per_second INTEGER, timestamp REAL)',
+  'CREATE TABLE tor_log_events(timestamp REAL, type TEXT, message TEXT)',
+  'CREATE INDEX tor_log_events_by_timestamp ON tor_log_events(timestamp)',
+  'CREATE TABLE collector_status(key TEXT PRIMARY KEY, value TEXT)',
 )
+
+SCHEMA_MIGRATIONS = {
+  2: (
+    'CREATE TABLE IF NOT EXISTS bandwidth_samples(timestamp REAL PRIMARY KEY, read_bytes INTEGER, written_bytes INTEGER)',
+    'CREATE TABLE IF NOT EXISTS bandwidth_peaks(direction TEXT PRIMARY KEY, bytes_per_second INTEGER, timestamp REAL)',
+    'CREATE TABLE IF NOT EXISTS tor_log_events(timestamp REAL, type TEXT, message TEXT)',
+    'CREATE INDEX IF NOT EXISTS tor_log_events_by_timestamp ON tor_log_events(timestamp)',
+    'CREATE TABLE IF NOT EXISTS collector_status(key TEXT PRIMARY KEY, value TEXT)',
+    'UPDATE schema SET version=3',
+  ),
+}
 
 
 try:
@@ -468,19 +489,33 @@ class Cache(object):
 
       if schema == SCHEMA_VERSION:
         stem.util.log.info('Cache loaded from %s' % cache_path)
+      elif schema in SCHEMA_MIGRATIONS:
+        stem.util.log.info('Migrating cache at %s from schema version %s to %s.' % (cache_path, schema, SCHEMA_VERSION))
+
+        with self._conn:
+          current_schema = schema
+
+          while current_schema != SCHEMA_VERSION:
+            for cmd in SCHEMA_MIGRATIONS[current_schema]:
+              self._conn.execute(cmd)
+
+            current_schema = self._query('SELECT version FROM schema').fetchone()[0]
       else:
         if schema is None:
           stem.util.log.info('Cache at %s is missing a schema, clearing it.' % cache_path)
         else:
           stem.util.log.info('Cache at %s has schema version %s but the current version is %s, clearing it.' % (cache_path, schema, SCHEMA_VERSION))
 
-        self._conn.close()
-        os.remove(cache_path)
-        self._conn = sqlite3.connect(cache_path, check_same_thread = False)
+        if hasattr(self, '_conn'):
+          self._conn.close()
+          os.remove(cache_path)
+          self._conn = sqlite3.connect(cache_path, check_same_thread = False)
 
-        for cmd in SCHEMA:
-          self._conn.execute(cmd)
-    else:
+          for cmd in SCHEMA:
+            self._conn.execute(cmd)
+        else:
+          cache_path = None
+    if not hasattr(self, '_conn'):
       stem.util.log.info('Unable to cache to disk. Using an in-memory cache instead.')
       self._conn = sqlite3.connect(':memory:', check_same_thread = False)
 
@@ -550,6 +585,34 @@ class Cache(object):
 
     return self._query('SELECT relays_updated_at FROM metadata').fetchone()[0]
 
+  def bandwidth_samples(self, limit = None):
+    query = 'SELECT timestamp, read_bytes, written_bytes FROM bandwidth_samples ORDER BY timestamp DESC'
+    params = ()
+
+    if limit:
+      query += ' LIMIT ?'
+      params = (limit,)
+
+    return list(reversed(self._query(query, *params).fetchall()))
+
+  def bandwidth_peak(self, direction, default = None):
+    result = self._query('SELECT bytes_per_second, timestamp FROM bandwidth_peaks WHERE direction=?', direction).fetchone()
+    return result if result else default
+
+  def tor_log_events(self, limit = None):
+    query = 'SELECT timestamp, type, message FROM tor_log_events ORDER BY timestamp DESC'
+    params = ()
+
+    if limit:
+      query += ' LIMIT ?'
+      params = (limit,)
+
+    return list(self._query(query, *params).fetchall())
+
+  def collector_status(self, key, default = None):
+    result = self._query('SELECT value FROM collector_status WHERE key=?', key).fetchone()
+    return result[0] if result else default
+
   def _query(self, query, *param):
     """
     Performs a query on our cache.
@@ -586,6 +649,32 @@ class CacheWriter(object):
 
     self._cache._query('INSERT OR REPLACE INTO relays(fingerprint, address, or_port, nickname) VALUES (?,?,?,?)', fingerprint, address, or_port, nickname)
     self._cache._query('UPDATE metadata SET relays_updated_at=?', time.time())
+
+  def record_bandwidth_sample(self, read_bytes, written_bytes, timestamp = None):
+    timestamp = time.time() if timestamp is None else timestamp
+    read_bytes, written_bytes = int(read_bytes), int(written_bytes)
+
+    self._cache._query('INSERT OR REPLACE INTO bandwidth_samples(timestamp, read_bytes, written_bytes) VALUES (?,?,?)', timestamp, read_bytes, written_bytes)
+    self._record_bandwidth_peak('download', read_bytes, timestamp)
+    self._record_bandwidth_peak('upload', written_bytes, timestamp)
+    self.set_collector_status('last_collection', str(timestamp))
+
+  def record_tor_log_event(self, event_type, message, timestamp = None):
+    timestamp = time.time() if timestamp is None else timestamp
+    self._cache._query('INSERT INTO tor_log_events(timestamp, type, message) VALUES (?,?,?)', timestamp, event_type, message)
+
+  def set_collector_status(self, key, value):
+    self._cache._query('INSERT OR REPLACE INTO collector_status(key, value) VALUES (?,?)', key, value)
+
+  def trim_collector_history(self, before):
+    self._cache._query('DELETE FROM bandwidth_samples WHERE timestamp<?', before)
+    self._cache._query('DELETE FROM tor_log_events WHERE timestamp<?', before)
+
+  def _record_bandwidth_peak(self, direction, bytes_per_second, timestamp):
+    current = self._cache.bandwidth_peak(direction)
+
+    if not current or bytes_per_second > current[0]:
+      self._cache._query('INSERT OR REPLACE INTO bandwidth_peaks(direction, bytes_per_second, timestamp) VALUES (?,?,?)', direction, bytes_per_second, timestamp)
 
 
 class Interface(object):
