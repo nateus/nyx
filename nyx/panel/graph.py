@@ -319,6 +319,13 @@ class BandwidthStats(GraphCategory):
 
         if is_successful:
           log.info('Bandwidth graph has information for the last %s' % str_tools.time_label(len(bw_entries.split()), is_long = True))
+      else:
+        for timestamp, read_bytes, written_bytes in nyx.cache().bandwidth_samples(CONFIG['max_graph_width']):
+          self.primary.update(read_bytes)
+          self.secondary.update(written_bytes)
+
+        if self.primary.tick:
+          log.info('Bandwidth graph loaded %i historical samples from the nyx collector.' % self.primary.tick)
 
       read_total = controller.get_info('traffic/read', None)
       write_total = controller.get_info('traffic/written', None)

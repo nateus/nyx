@@ -7,11 +7,12 @@ import unittest
 
 import stem.exit_policy
 import stem.version
+import nyx
 import nyx.panel.connection
 import test
 
 from nyx.tracker import Connection
-from nyx.panel.connection import Category, LineType, Line, Entry
+from nyx.panel.connection import Category, LineType, Line, Entry, SortAttr
 from test import require_curses
 
 try:
@@ -226,6 +227,37 @@ class TestConnectionPanel(unittest.TestCase):
     for test_line, expected in test_data:
       rendered = test.render(nyx.panel.connection._draw_line, 0, 0, test_line, False, 80, TIMESTAMP + 15.4)
       self.assertEqual(expected, rendered.content)
+
+  @require_curses
+  @patch('nyx.data_directory', Mock(return_value = None))
+  def test_draw_data_sent_column(self):
+    nyx.CACHE = None
+
+    with nyx.cache().write() as writer:
+      writer.record_ip_traffic('75.119.206.243', '1F43EE37A0670301AD9CB555D94AFEC2C89FDE86', 'Unnamed', 'de', 2048, 0, TIMESTAMP)
+
+    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(), 120, ())
+    self.assertTrue('2.0 KB' in rendered.content)
+
+    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
+    self.assertTrue('unavailable' in rendered.content)
+
+    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(entry = MockEntry(is_private = True)), 120, ())
+    self.assertEqual('', rendered.content)
+
+  @patch('nyx.data_directory', Mock(return_value = None))
+  def test_sort_by_data_sent(self):
+    nyx.CACHE = None
+
+    with nyx.cache().write() as writer:
+      writer.record_ip_traffic('75.119.206.243', '1F43EE37A0670301AD9CB555D94AFEC2C89FDE86', 'Unnamed', 'de', 100, 0, TIMESTAMP)
+      writer.record_ip_traffic('86.59.30.40', '1F43EE37A0670301AD9CB555D94AFEC2C89FDE86', 'Unnamed', 'at', 500, 0, TIMESTAMP)
+
+    first = nyx.panel.connection.ConnectionEntry(Connection(TIMESTAMP, False, '127.0.0.1', 3531, '75.119.206.243', 22, 'tcp', False))
+    second = nyx.panel.connection.ConnectionEntry(Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False))
+
+    with patch.object(nyx.panel.connection.ConnectionEntry, 'is_private', Mock(return_value = False)):
+      self.assertEqual([second, first], sorted([first, second], key = lambda entry: entry.sort_value(SortAttr.DATA_SENT)))
 
   @require_curses
   @patch('nyx.panel.connection.tor_controller')

@@ -7,6 +7,12 @@
 #   % nyx --config /path/to/config
 
 data_directory ~/.nyx   # Caching location, can be set to 'disabled'.
+collector_enabled true  # Enables nyx-collector when it is run.
+collector_interval 1    # Seconds between collector retention checks.
+collector_retention_days 30
+                        # Days to retain collected bandwidth/log history.
+collector_log_events NOTICE,WARN,ERR
+                        # Tor log events persisted by nyx-collector.
 password none           # Control port password of tor.
 #tor_chroot /path       # Chroot jail tor resides within if there is one.
 show_bits false         # Bandwidth rate as bits if true, bytes otherwise.

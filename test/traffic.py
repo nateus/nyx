@@ -44,3 +44,13 @@ class TestTraffic(unittest.TestCase):
     resolver = nyx.traffic.BccTrafficResolver()
     self.assertEqual(nyx.traffic.TrafficStatus('unavailable', 'unsupported_platform'), resolver.status())
     self.assertEqual(None, resolver.sample([CONNECTION]))
+<<<<<<< HEAD
+=======
+
+  @patch('nyx.traffic.platform.system', Mock(return_value = 'Windows'))
+  def test_best_resolver_falls_back(self):
+    with patch.dict(nyx.traffic.CONFIG, {'traffic_resolver': 'auto'}):
+      resolver = nyx.traffic.best_resolver()
+
+    self.assertEqual(nyx.traffic.TrafficStatus('unavailable', 'unsupported_platform'), resolver.status())
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96

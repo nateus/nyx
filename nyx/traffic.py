@@ -14,8 +14,22 @@ import struct
 from stem.util import conf
 
 
+<<<<<<< HEAD
 TrafficStatus = collections.namedtuple('TrafficStatus', ['state', 'reason'])
 SocketTraffic = collections.namedtuple('SocketTraffic', ['key', 'bytes_sent', 'bytes_received'])
+=======
+TrafficStatus = collections.namedtuple('TrafficStatus', [
+  'state',
+  'reason',
+])
+
+SocketTraffic = collections.namedtuple('SocketTraffic', [
+  'key',
+  'bytes_sent',
+  'bytes_received',
+])
+
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
 
 CONFIG = conf.config_dict('nyx', {
   'traffic_resolver': 'auto',
@@ -23,7 +37,17 @@ CONFIG = conf.config_dict('nyx', {
 
 
 def connection_key(conn):
+<<<<<<< HEAD
   return (conn.local_address, int(conn.local_port), conn.remote_address, int(conn.remote_port), conn.protocol)
+=======
+  return (
+    conn.local_address,
+    int(conn.local_port),
+    conn.remote_address,
+    int(conn.remote_port),
+    conn.protocol,
+  )
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
 
 
 def best_resolver():
@@ -92,6 +116,13 @@ class DeltaTrafficResolver(TrafficResolver):
 
 
 class ManualTrafficResolver(DeltaTrafficResolver):
+<<<<<<< HEAD
+=======
+  """
+  Test helper backed by caller-provided cumulative socket totals.
+  """
+
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
   def __init__(self):
     super(ManualTrafficResolver, self).__init__()
     self.totals = []
@@ -101,6 +132,14 @@ class ManualTrafficResolver(DeltaTrafficResolver):
 
 
 class BccTrafficResolver(DeltaTrafficResolver):
+<<<<<<< HEAD
+=======
+  """
+  Linux eBPF/BCC backend. This is optional and only active when BCC and kernel
+  permissions are available.
+  """
+
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
   _BPF_PROGRAM = r"""
 #include <uapi/linux/ptrace.h>
 #include <linux/in.h>
@@ -211,7 +250,11 @@ int trace_tcp_cleanup_rbuf(struct pt_regs *ctx, struct sock *sk, int copied) {
     except Exception as exc:
       message = str(exc).lower()
 
+<<<<<<< HEAD
       if hasattr(os, 'geteuid') and os.geteuid() != 0:
+=======
+      if os.geteuid() != 0:
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
         reason = 'permission_denied'
       elif 'permission' in message or 'operation not permitted' in message:
         reason = 'permission_denied'
@@ -226,11 +269,24 @@ int trace_tcp_cleanup_rbuf(struct pt_regs *ctx, struct sock *sk, int copied) {
     if self._traffic is None:
       return []
 
+<<<<<<< HEAD
     return [SocketTraffic(_decode_bcc_key(key), int(value.sent), int(value.received)) for key, value in self._traffic.items()]
+=======
+    totals = []
+
+    for key, value in self._traffic.items():
+      totals.append(SocketTraffic(_decode_bcc_key(key), int(value.sent), int(value.received)))
+
+    return totals
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
 
 
 def _decode_bcc_key(key):
   local_address = socket.inet_ntoa(struct.pack('I', key.saddr))
   remote_address = socket.inet_ntoa(struct.pack('I', key.daddr))
   remote_port = socket.ntohs(key.dport)
+<<<<<<< HEAD
+=======
+
+>>>>>>> bc3f1cce9797859779019df302632dfdbbc6ca96
   return (local_address, int(key.sport), remote_address, int(remote_port), 'tcp')

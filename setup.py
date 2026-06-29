@@ -37,6 +37,7 @@ include MANIFEST.in
 include nyx.1
 include run_nyx
 include run_tests.py
+recursive-include systemd *
 graft test
 graft web
 global-exclude __pycache__
@@ -81,7 +82,7 @@ try:
     keywords = 'tor onion controller',
     install_requires = ['stem>=1.7.0'],
     package_data = {'nyx': ['settings/*']},
-    entry_points = {'console_scripts': ['nyx = nyx.__init__:main']},
+    entry_points = {'console_scripts': ['nyx = nyx.__init__:main', 'nyx-collector = nyx.collector:main']},
     classifiers = [
       'Development Status :: 5 - Production/Stable',
       'Environment :: Console :: Curses',
