@@ -92,6 +92,11 @@ class TestLogPanel(unittest.TestCase):
     rendered = test.render(nyx.panel.log._draw_title, ['NOTICE', 'WARN', 'ERR'], log_filter)
     self.assertEqual('Events (NOTICE-ERR, filter: stuff*):', rendered.content)
 
+  def test_suppresses_control_connection_notice(self):
+    self.assertTrue(nyx.panel.log._is_suppressed_tor_log(LogEntry(NOW, 'NOTICE', 'New control connection opened from 127.0.0.1.')))
+    self.assertFalse(nyx.panel.log._is_suppressed_tor_log(LogEntry(NOW, 'NOTICE', 'Opening Control listener on 127.0.0.1:9051')))
+    self.assertFalse(nyx.panel.log._is_suppressed_tor_log(LogEntry(NOW, 'NYX_NOTICE', 'New control connection opened from 127.0.0.1.')))
+
   @require_curses
   @patch('time.localtime', Mock(return_value = TIME_STRUCT))
   def test_draw_entry(self):

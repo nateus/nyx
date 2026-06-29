@@ -64,6 +64,9 @@ UPDATE_RATE = 0.7
 # redraws the display if it's off by this threshold.
 
 CONTENT_HEIGHT_REDRAW_THRESHOLD = 3
+SUPPRESSED_TOR_LOG_MESSAGES = (
+  'New control connection opened from 127.0.0.1.',
+)
 
 # Log buffer so we start collecting stem/nyx events when imported. This is used
 # to make our LogPanel when curses initializes.
@@ -118,7 +121,7 @@ class LogPanel(nyx.panel.DaemonPanel):
       if log_location:
         try:
           for entry in reversed(list(nyx.log.read_tor_log(log_location, CONFIG['prepopulate_read_limit']))):
-            if entry.type in self._event_types:
+            if entry.type in self._event_types and not _is_suppressed_tor_log(entry):
               self._event_log.add(entry)
         except IOError as exc:
           log.info('Unable to read log located at %s: %s' % (log_location, exc))
@@ -360,6 +363,8 @@ class LogPanel(nyx.panel.DaemonPanel):
   def _register_event(self, event):
     if event.type not in self._event_types:
       return
+    elif _is_suppressed_tor_log(event):
+      return
 
     self._event_log.add(event)
     self._log_file.write(event.display_message)
@@ -368,6 +373,10 @@ class LogPanel(nyx.panel.DaemonPanel):
 
     if self._filter.match(event.display_message):
       self._has_new_event = True
+
+
+def _is_suppressed_tor_log(event):
+  return event.type in nyx.log.TOR_RUNLEVELS and event.message in SUPPRESSED_TOR_LOG_MESSAGES
 
 
 def _draw_title(subwindow, event_types, event_filter):

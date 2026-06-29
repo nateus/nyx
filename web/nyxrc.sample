@@ -18,6 +18,7 @@ acs_support true        # Uses ACS (alternate character set) for nice borders.
 
 redraw_rate 5           # Seconds to await user input before redrawing.
 connection_rate 5       # Seconds between querying connections.
+traffic_resolver auto   # Backend for per-socket traffic counters.
 resource_rate 5         # Seconds between querying process resource usage.
 port_usage_rate 5       # Seconds between querying processes using ports.
 
@@ -40,6 +41,9 @@ show_private_options false  # Shows configurations with a '__option' prefix.
 show_virtual_options false  # Shows unsettable tor configurations.
 
 connection_order CATEGORY, IP_ADDRESS, UPTIME # Order for connections. [6]
+connection_show_traffic true
+                        # Shows persisted relay traffic totals when available.
+traffic_top_limit 50    # Number of IPs in the top data recipients popup.
 resolve_processes true  # Shows processes for SOCKS and CONTROL connections.
 show_addresses true     # Shows addresses of connections.
 
@@ -95,3 +99,4 @@ show_interpreter true   # Shows the control interpreter.
 #       * FINGERPRINT
 #       * NICKNAME
 #       * COUNTRY
+#       * DATA_SENT

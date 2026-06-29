@@ -130,6 +130,7 @@ __all__ = [
   'panel',
   'popups',
   'starter',
+  'traffic',
   'tracker',
 ]
 
@@ -175,7 +176,7 @@ stem.response.events.PARSE_NEWCONSENSUS_EVENTS = False
 
 PAUSE_TIME = 0.4
 
-SCHEMA_VERSION = 2  # version of our scheme, bump this if you change the following
+SCHEMA_VERSION = 3  # version of our scheme, bump this if you change the following
 SCHEMA = (
   'CREATE TABLE schema(version INTEGER)',
   'INSERT INTO schema(version) VALUES (%i)' % SCHEMA_VERSION,
@@ -185,6 +186,9 @@ SCHEMA = (
 
   'CREATE TABLE relays(fingerprint TEXT PRIMARY KEY, address TEXT, or_port INTEGER, nickname TEXT)',
   'CREATE INDEX addresses ON relays(address)',
+  'CREATE TABLE ip_traffic(remote_address TEXT PRIMARY KEY, fingerprint TEXT, nickname TEXT, country TEXT, bytes_sent INTEGER, bytes_received INTEGER, first_seen REAL, last_seen REAL)',
+  'CREATE INDEX ip_traffic_by_bytes_sent ON ip_traffic(bytes_sent)',
+  'CREATE TABLE collector_status(key TEXT PRIMARY KEY, value TEXT)',
 )
 
 
@@ -474,13 +478,17 @@ class Cache(object):
         else:
           stem.util.log.info('Cache at %s has schema version %s but the current version is %s, clearing it.' % (cache_path, schema, SCHEMA_VERSION))
 
-        self._conn.close()
-        os.remove(cache_path)
-        self._conn = sqlite3.connect(cache_path, check_same_thread = False)
+        if hasattr(self, '_conn'):
+          self._conn.close()
+          os.remove(cache_path)
+          self._conn = sqlite3.connect(cache_path, check_same_thread = False)
 
-        for cmd in SCHEMA:
-          self._conn.execute(cmd)
-    else:
+          for cmd in SCHEMA:
+            self._conn.execute(cmd)
+        else:
+          cache_path = None
+
+    if not hasattr(self, '_conn'):
       stem.util.log.info('Unable to cache to disk. Using an in-memory cache instead.')
       self._conn = sqlite3.connect(':memory:', check_same_thread = False)
 
@@ -550,6 +558,17 @@ class Cache(object):
 
     return self._query('SELECT relays_updated_at FROM metadata').fetchone()[0]
 
+  def ip_traffic(self, remote_address, default = None):
+    result = self._query('SELECT remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, first_seen, last_seen FROM ip_traffic WHERE remote_address=?', remote_address).fetchone()
+    return result if result else default
+
+  def top_ip_traffic(self, limit = 50):
+    return self._query('SELECT remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, first_seen, last_seen FROM ip_traffic ORDER BY bytes_sent DESC LIMIT ?', limit).fetchall()
+
+  def collector_status(self, key, default = None):
+    result = self._query('SELECT value FROM collector_status WHERE key=?', key).fetchone()
+    return result[0] if result else default
+
   def _query(self, query, *param):
     """
     Performs a query on our cache.
@@ -586,6 +605,38 @@ class CacheWriter(object):
 
     self._cache._query('INSERT OR REPLACE INTO relays(fingerprint, address, or_port, nickname) VALUES (?,?,?,?)', fingerprint, address, or_port, nickname)
     self._cache._query('UPDATE metadata SET relays_updated_at=?', time.time())
+
+  def record_ip_traffic(self, remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, timestamp = None):
+    timestamp = time.time() if timestamp is None else timestamp
+    bytes_sent, bytes_received = int(bytes_sent), int(bytes_received)
+    current = self._cache.ip_traffic(remote_address)
+
+    if current:
+      self._cache._query(
+        'UPDATE ip_traffic SET fingerprint=?, nickname=?, country=?, bytes_sent=?, bytes_received=?, last_seen=? WHERE remote_address=?',
+        fingerprint,
+        nickname,
+        country,
+        current[4] + bytes_sent,
+        current[5] + bytes_received,
+        timestamp,
+        remote_address,
+      )
+    else:
+      self._cache._query(
+        'INSERT INTO ip_traffic(remote_address, fingerprint, nickname, country, bytes_sent, bytes_received, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?)',
+        remote_address,
+        fingerprint,
+        nickname,
+        country,
+        bytes_sent,
+        bytes_received,
+        timestamp,
+        timestamp,
+      )
+
+  def set_collector_status(self, key, value):
+    self._cache._query('INSERT OR REPLACE INTO collector_status(key, value) VALUES (?,?)', key, value)
 
 
 class Interface(object):

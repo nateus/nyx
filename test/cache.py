@@ -3,6 +3,7 @@ Unit tests for nyx.cache.
 """
 
 import re
+import os
 import tempfile
 import time
 import unittest
@@ -39,17 +40,27 @@ class TestCache(unittest.TestCase):
     Create a new cache file, and ensure we can reload cached results.
     """
 
-    with tempfile.NamedTemporaryFile(suffix = '.sqlite') as tmp:
-      with patch('nyx.data_directory', Mock(return_value = tmp.name)):
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix = '.sqlite')
+    os.close(tmp_fd)
+
+    try:
+      with patch('nyx.data_directory', Mock(return_value = tmp_path)):
         cache = nyx.cache()
-        self.assertEqual((0, 'main', tmp.name), cache._query('PRAGMA database_list').fetchone())
+        self.assertEqual((0, 'main', tmp_path), cache._query('PRAGMA database_list').fetchone())
 
         with cache.write() as writer:
           writer.record_relay('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', '208.113.165.162', 1443, 'caersidi')
 
+        nyx.CACHE._conn.close()
         nyx.CACHE = None
         cache = nyx.cache()
         self.assertEqual('caersidi', cache.relay_nickname('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'))
+    finally:
+      if nyx.CACHE:
+        nyx.CACHE._conn.close()
+        nyx.CACHE = None
+
+      os.remove(tmp_path)
 
   @patch('nyx.data_directory', Mock(return_value = None))
   def test_relays_for_address(self):
@@ -139,6 +150,20 @@ class TestCache(unittest.TestCase):
       writer.record_relay('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', '128.31.0.34', 9101, 'moria1')
 
     self.assertEqual('moria1', cache.relay_nickname('3EA8E960F6B94CE30062AA8EF02894C00F8D1E66'))
+
+  @patch('nyx.data_directory', Mock(return_value = None))
+  def test_ip_traffic_cache(self):
+    cache = nyx.cache()
+
+    with cache.write() as writer:
+      writer.record_ip_traffic('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 100, 20, 10.0)
+      writer.record_ip_traffic('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 50, 5, 20.0)
+      writer.record_ip_traffic('86.59.30.40', '9695DFC35FFEB861329B9F1AB04C46397020CE31', 'moria1', 'at', 500, 10, 30.0)
+      writer.set_collector_status('traffic_counters_reason', 'bcc_missing')
+
+    self.assertEqual(('75.119.206.243', '3EA8E960F6B94CE30062AA8EF02894C00F8D1E66', 'caersidi', 'de', 150, 25, 10.0, 20.0), cache.ip_traffic('75.119.206.243'))
+    self.assertEqual(['86.59.30.40', '75.119.206.243'], [entry[0] for entry in cache.top_ip_traffic()])
+    self.assertEqual('bcc_missing', cache.collector_status('traffic_counters_reason'))
 
   @patch('nyx.data_directory', Mock(return_value = None))
   def test_record_relay_when_invalid(self):
