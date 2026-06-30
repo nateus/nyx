@@ -245,14 +245,16 @@ class TestConnectionPanel(unittest.TestCase):
     rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(), 79, ())
     self.assertEqual('', rendered.content)
 
-    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
-    self.assertTrue('unavailable: unknown' in rendered.content)
+    with patch('nyx.panel.connection._traffic_unavailable_reason', Mock(return_value = 'bcc_missing')):
+      rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
+      self.assertTrue('unavailable: bcc_missing' in rendered.content)
 
     with nyx.cache().write() as writer:
       writer.set_collector_status('traffic_counters_reason', '')
 
-    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
-    self.assertTrue('unavailable: unknown' in rendered.content)
+    with patch('nyx.panel.connection._traffic_unavailable_reason', Mock(return_value = 'no_traffic_samples')):
+      rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
+      self.assertTrue('unavailable: no_traffic_samples' in rendered.content)
 
     with nyx.cache().write() as writer:
       writer.set_collector_status('traffic_counters', 'available')

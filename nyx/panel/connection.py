@@ -15,6 +15,7 @@ import nyx
 import nyx.curses
 import nyx.panel
 import nyx.popups
+import nyx.traffic
 import nyx.tracker
 
 from nyx import nyx_interface, tor_controller
@@ -29,7 +30,7 @@ from stem.util import datetime_to_unix, conf, connection, enum, str_tools
 DETAILS_HEIGHT = 7
 
 EXIT_USAGE_WIDTH = 15
-DATA_SENT_WIDTH = 13
+DATA_SENT_WIDTH = 32
 RIGHT_COLUMN_WIDTH = 18
 MIN_DATA_SENT_PANEL_WIDTH = 80
 UPDATE_RATE = 5  # rate in seconds at which we refresh
@@ -765,8 +766,38 @@ def _traffic_label(line):
   if nyx.cache().collector_status('traffic_counters') == 'available':
     return str_tools.size_label(0, 1)
 
-  reason = nyx.cache().collector_status('traffic_counters_reason', 'unknown') or 'unknown'
+  reason = _traffic_unavailable_reason()
   return 'unavailable: %s' % reason
+
+
+def _traffic_unavailable_reason():
+  reason = nyx.cache().collector_status('traffic_counters_reason')
+
+  if reason and reason != 'unknown':
+    return reason
+
+  try:
+    status = nyx.tracker.get_connection_tracker().get_traffic_status()
+    reason = nyx.traffic.unavailable_reason(status, None)
+
+    if reason and reason != 'unknown':
+      return reason
+  except Exception:
+    return 'status_error'
+
+  last_error = nyx.cache().collector_status('last_error')
+
+  if last_error:
+    return 'collector_error'
+
+  running = nyx.cache().collector_status('running')
+
+  if running == 'false':
+    return 'collector_stopped'
+  elif running is None:
+    return 'collector_status_missing'
+  else:
+    return 'no_traffic_samples'
 
 
 def _draw_data_sent_column(subwindow, x, y, line, width, attr):
