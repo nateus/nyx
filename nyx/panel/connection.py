@@ -762,6 +762,9 @@ def _traffic_label(line):
   if traffic:
     return str_tools.size_label(traffic[4], 1)
 
+  if nyx.cache().collector_status('traffic_counters') == 'available':
+    return str_tools.size_label(0, 1)
+
   reason = nyx.cache().collector_status('traffic_counters_reason')
   return 'unavailable%s' % (': %s' % reason if reason else '')
 

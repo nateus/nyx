@@ -150,3 +150,32 @@ class TestConnectionTracker(unittest.TestCase):
     self.assertEqual(80, samples[0].bytes_sent)
     self.assertEqual(15, samples[0].bytes_received)
     self.assertEqual(nyx.traffic.TrafficStatus('available', None), daemon.get_traffic_status())
+
+  @patch('nyx.tracker.tor_controller')
+  @patch('nyx.tracker.connection.get_connections')
+  @patch('nyx.tracker.system', Mock(return_value = Mock()))
+  @patch('stem.util.proc.is_available', Mock(return_value = False))
+  @patch('nyx.tracker.connection.system_resolvers', Mock(return_value = [connection.Resolver.NETSTAT]))
+  def test_traffic_samples_match_remote_endpoint(self, get_value_mock, tor_controller_mock):
+    tor_controller_mock().get_pid.return_value = 12345
+    tor_controller_mock().get_conf.return_value = '0'
+    get_value_mock.return_value = [STEM_CONNECTIONS[0]]
+
+    daemon = ConnectionTracker(0.04)
+    daemon._task(12345, 'tor')
+
+    traffic_resolver = nyx.traffic.ManualTrafficResolver()
+    _, local_port, remote_address, remote_port, protocol = nyx.traffic.connection_key(daemon.get_value()[0])
+    bcc_key = ('0.0.0.0', local_port, remote_address, remote_port, protocol)
+    traffic_resolver.totals = [nyx.traffic.SocketTraffic(bcc_key, 100, 20)]
+    daemon._traffic_resolver = traffic_resolver
+
+    self.assertEqual([], daemon.get_traffic_samples())
+
+    traffic_resolver.totals = [nyx.traffic.SocketTraffic(bcc_key, 180, 35)]
+    samples = daemon.get_traffic_samples()
+
+    self.assertEqual(1, len(samples))
+    self.assertEqual(daemon.get_value()[0], samples[0].connection)
+    self.assertEqual(80, samples[0].bytes_sent)
+    self.assertEqual(15, samples[0].bytes_received)

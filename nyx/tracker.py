@@ -660,13 +660,13 @@ class ConnectionTracker(Daemon):
     if self._traffic_resolver is None:
       self._traffic_resolver = nyx.traffic.best_resolver()
 
-    samples = self._traffic_resolver.sample(self.get_value())
+    connections = self.get_value()
+    samples = self._traffic_resolver.sample(connections)
 
     if samples is None:
       return None
 
-    by_key = dict([(nyx.traffic.connection_key(conn), conn) for conn in self.get_value()])
-    return [TrafficSample(by_key[sample.key], sample.bytes_sent, sample.bytes_received) for sample in samples if sample.key in by_key]
+    return _match_traffic_samples(connections, samples)
 
   def get_traffic_status(self):
     """
@@ -711,6 +711,40 @@ class ConnectionTracker(Daemon):
 
       for record in records:
         writer.record_ip_traffic(*record)
+
+
+def _remote_traffic_key(conn_or_sample_key):
+  if isinstance(conn_or_sample_key, tuple):
+    _, _, remote_address, remote_port, protocol = conn_or_sample_key
+  else:
+    remote_address = conn_or_sample_key.remote_address
+    remote_port = conn_or_sample_key.remote_port
+    protocol = conn_or_sample_key.protocol
+
+  return (remote_address, int(remote_port), protocol)
+
+
+def _match_traffic_samples(connections, samples):
+  by_exact_key = dict([(nyx.traffic.connection_key(conn), conn) for conn in connections])
+  by_remote_key = {}
+
+  for conn in connections:
+    remote_key = _remote_traffic_key(conn)
+    by_remote_key[remote_key] = conn if remote_key not in by_remote_key else None
+
+  results = []
+
+  for sample in samples:
+    conn = by_exact_key.get(sample.key)
+
+    if conn is None:
+      conn = by_remote_key.get(_remote_traffic_key(sample.key))
+
+    if conn is not None:
+      results.append(TrafficSample(conn, sample.bytes_sent, sample.bytes_received))
+
+  return results
+
 
 class ResourceTracker(Daemon):
   """
