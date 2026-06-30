@@ -290,10 +290,15 @@ def _decode_bcc_key(key):
 
 
 def _bcc_error_reason(message):
+  lines = []
+
   for line in message.splitlines():
     line = line.strip()
 
     if line:
-      return 'bcc_unavailable: %s' % line[:120]
+      lines.append(line)
 
-  return 'bcc_unavailable'
+    if len(lines) >= 3:
+      break
+
+  return 'bcc_unavailable: %s' % ' | '.join(lines)[:240] if lines else 'bcc_unavailable'
