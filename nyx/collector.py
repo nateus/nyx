@@ -14,6 +14,7 @@ from stem.control import EventType
 from stem.util import conf, log
 
 import nyx
+import nyx.traffic
 import nyx.tracker
 
 
@@ -107,6 +108,7 @@ class Collector(object):
     tracker = nyx.tracker.get_connection_tracker()
     samples = tracker.get_traffic_samples()
     status = tracker.get_traffic_status()
+    raw_samples = tracker.get_raw_traffic_samples() if samples is not None else None
 
     if samples is None:
       with self._cache.write() as writer:
@@ -132,6 +134,19 @@ class Collector(object):
         nickname = consensus_tracker.get_relay_nickname(fingerprint)
         country = self._controller.get_info('ip-to-country/%s' % conn.remote_address, None)
         writer.record_ip_traffic(conn.remote_address, fingerprint, nickname, country, sample.bytes_sent, sample.bytes_received)
+
+      if not samples and raw_samples:
+        for sample in raw_samples:
+          _, _, remote_address, remote_port, _ = sample.key
+          relays = consensus_tracker.get_relay_fingerprints(remote_address)
+          fingerprint = relays.get(remote_port) if relays else None
+
+          if not fingerprint:
+            continue
+
+          nickname = consensus_tracker.get_relay_nickname(fingerprint)
+          country = self._controller.get_info('ip-to-country/%s' % remote_address, None)
+          writer.record_ip_traffic(remote_address, fingerprint, nickname, country, sample.bytes_sent, sample.bytes_received)
 
 
 def _configured_log_events():

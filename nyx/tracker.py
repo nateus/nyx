@@ -509,6 +509,7 @@ class ConnectionTracker(Daemon):
     self._start_times = {}  # connection => (unix_timestamp, is_legacy)
     self._custom_resolver = None
     self._traffic_resolver = None
+    self._latest_raw_traffic_samples = None
     self._is_first_run = True
 
     # Number of times in a row we've either failed with our current resolver or
@@ -661,12 +662,23 @@ class ConnectionTracker(Daemon):
       self._traffic_resolver = nyx.traffic.best_resolver()
 
     connections = self.get_value()
-    samples = self._traffic_resolver.sample(connections)
+    samples = self._traffic_resolver.sample_all()
 
     if samples is None:
+      self._latest_raw_traffic_samples = None
       return None
 
+    self._latest_raw_traffic_samples = samples
     return _match_traffic_samples(connections, samples)
+
+  def get_raw_traffic_samples(self):
+    if self._traffic_resolver is None:
+      self._traffic_resolver = nyx.traffic.best_resolver()
+
+    if self._latest_raw_traffic_samples is None:
+      self._latest_raw_traffic_samples = self._traffic_resolver.sample_all()
+
+    return self._latest_raw_traffic_samples
 
   def get_traffic_status(self):
     """
@@ -683,6 +695,7 @@ class ConnectionTracker(Daemon):
   def _record_traffic_samples(self, connections):
     samples = self.get_traffic_samples()
     status = self.get_traffic_status()
+    raw_samples = self.get_raw_traffic_samples() if samples is not None else None
 
     records = []
 
@@ -699,6 +712,17 @@ class ConnectionTracker(Daemon):
           nickname = consensus_tracker.get_relay_nickname(fingerprint)
           country = controller.get_info('ip-to-country/%s' % conn.remote_address, None)
           records.append((conn.remote_address, fingerprint, nickname, country, sample.bytes_sent, sample.bytes_received))
+
+      if not samples and raw_samples:
+        for sample in raw_samples:
+          _, _, remote_address, remote_port, _ = sample.key
+          relays = consensus_tracker.get_relay_fingerprints(remote_address)
+          fingerprint = relays.get(remote_port) if relays else None
+
+          if fingerprint:
+            nickname = consensus_tracker.get_relay_nickname(fingerprint)
+            country = controller.get_info('ip-to-country/%s' % remote_address, None)
+            records.append((remote_address, fingerprint, nickname, country, sample.bytes_sent, sample.bytes_received))
 
     with nyx.cache().write() as writer:
       if samples is None:

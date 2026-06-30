@@ -73,6 +73,9 @@ class TrafficResolver(object):
   def sample(self, connections):
     return None
 
+  def sample_all(self):
+    return None
+
 
 class UnavailableTrafficResolver(TrafficResolver):
   def __init__(self, reason):
@@ -92,17 +95,11 @@ class DeltaTrafficResolver(TrafficResolver):
   def _read_totals(self):
     raise NotImplementedError('should be implemented by subclasses')
 
-  def sample(self, connections):
+  def sample_all(self):
     totals = dict([(entry.key, entry) for entry in self._read_totals()])
     samples = []
 
-    for conn in connections:
-      key = connection_key(conn)
-      current = totals.get(key)
-
-      if not current:
-        continue
-
+    for key, current in totals.items():
       previous = self._last_totals.get(key)
 
       if previous:
@@ -114,6 +111,15 @@ class DeltaTrafficResolver(TrafficResolver):
 
     self._last_totals = totals
     return samples
+
+  def sample(self, connections):
+    samples = self.sample_all()
+
+    if samples is None:
+      return None
+
+    connection_keys = set([connection_key(conn) for conn in connections])
+    return [sample for sample in samples if sample.key in connection_keys]
 
 
 class ManualTrafficResolver(DeltaTrafficResolver):
@@ -224,6 +230,12 @@ int trace_tcp_cleanup_rbuf(struct pt_regs *ctx, struct sock *sk, int copied) {
       return None
 
     return super(BccTrafficResolver, self).sample(connections)
+
+  def sample_all(self):
+    if self._status.state != 'available':
+      return None
+
+    return super(BccTrafficResolver, self).sample_all()
 
   def _init_backend(self):
     if platform.system() != 'Linux':
