@@ -764,10 +764,10 @@ def _traffic_label(line):
     return str_tools.size_label(traffic[4], 1)
 
   if nyx.cache().collector_status('traffic_counters') == 'available':
-    return str_tools.size_label(0, 1)
+    return _traffic_available_without_record_label()
 
   if _traffic_resolver_is_available():
-    return str_tools.size_label(0, 1)
+    return _traffic_available_without_record_label()
 
   reason = _traffic_unavailable_reason()
   return 'unavailable: %s' % reason
@@ -778,6 +778,15 @@ def _traffic_resolver_is_available():
     return nyx.tracker.get_connection_tracker().get_traffic_status().state == 'available'
   except Exception:
     return False
+
+
+def _traffic_available_without_record_label():
+  reason = nyx.cache().collector_status('traffic_counters_reason')
+
+  if reason:
+    return reason
+  else:
+    return str_tools.size_label(0, 1)
 
 
 def _traffic_unavailable_reason():

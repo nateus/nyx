@@ -728,10 +728,26 @@ class ConnectionTracker(Daemon):
       if samples is None:
         writer.set_collector_status('traffic_counters', 'unavailable')
         writer.set_collector_status('traffic_counters_reason', nyx.traffic.unavailable_reason(status))
+        writer.set_collector_status('traffic_counters_raw_samples', '0')
+        writer.set_collector_status('traffic_counters_matched_samples', '0')
+        writer.set_collector_status('traffic_counters_recorded_samples', '0')
         return
 
+      raw_sample_count = len(raw_samples) if raw_samples else 0
+      reason = ''
+
+      if not raw_sample_count:
+        reason = 'no_bcc_deltas'
+      elif not samples and not records:
+        reason = 'raw_samples_unmatched'
+      elif samples and not records:
+        reason = 'matched_samples_without_relays'
+
       writer.set_collector_status('traffic_counters', 'available')
-      writer.set_collector_status('traffic_counters_reason', '')
+      writer.set_collector_status('traffic_counters_reason', reason)
+      writer.set_collector_status('traffic_counters_raw_samples', str(raw_sample_count))
+      writer.set_collector_status('traffic_counters_matched_samples', str(len(samples)))
+      writer.set_collector_status('traffic_counters_recorded_samples', str(len(records)))
 
       for record in records:
         writer.record_ip_traffic(*record)

@@ -262,6 +262,13 @@ class TestConnectionPanel(unittest.TestCase):
 
     with nyx.cache().write() as writer:
       writer.set_collector_status('traffic_counters', 'available')
+      writer.set_collector_status('traffic_counters_reason', 'no_bcc_deltas')
+
+    rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
+    self.assertTrue('no_bcc_deltas' in rendered.content)
+
+    with nyx.cache().write() as writer:
+      writer.set_collector_status('traffic_counters', 'available')
       writer.set_collector_status('traffic_counters_reason', '')
 
     rendered = test.render(nyx.panel.connection._draw_data_sent_column, 0, 0, line(connection = Connection(TIMESTAMP, False, '127.0.0.1', 3531, '86.59.30.40', 22, 'tcp', False)), 120, ())
