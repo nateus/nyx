@@ -255,14 +255,15 @@ int trace_tcp_cleanup_rbuf(struct pt_regs *ctx, struct sock *sk, int copied) {
       self._traffic = self._bpf.get_table('traffic')
       self._status = TrafficStatus('available', None)
     except Exception as exc:
-      message = str(exc).lower()
+      message = str(exc)
+      lower_message = message.lower()
 
       if hasattr(os, 'geteuid') and os.geteuid() != 0:
         reason = 'permission_denied'
-      elif 'permission' in message or 'operation not permitted' in message:
+      elif 'permission' in lower_message or 'operation not permitted' in lower_message:
         reason = 'permission_denied'
       else:
-        reason = 'bcc_unavailable'
+        reason = _bcc_error_reason(message)
 
       self._status = TrafficStatus('unavailable', reason)
       self._bpf = None
@@ -286,3 +287,13 @@ def _decode_bcc_key(key):
   remote_port = socket.ntohs(key.dport)
 
   return (local_address, int(key.sport), remote_address, int(remote_port), 'tcp')
+
+
+def _bcc_error_reason(message):
+  for line in message.splitlines():
+    line = line.strip()
+
+    if line:
+      return 'bcc_unavailable: %s' % line[:120]
+
+  return 'bcc_unavailable'

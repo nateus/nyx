@@ -31,6 +31,10 @@ class TestTraffic(unittest.TestCase):
     resolver = nyx.traffic.UnavailableTrafficResolver(None)
     self.assertEqual(nyx.traffic.TrafficStatus('unavailable', 'unavailable'), resolver.status())
 
+  def test_bcc_error_reason(self):
+    self.assertEqual('bcc_unavailable: failed to compile BPF module', nyx.traffic._bcc_error_reason('\nfailed to compile BPF module\nmore details'))
+    self.assertEqual('bcc_unavailable', nyx.traffic._bcc_error_reason(''))
+
   def test_delta_resolver(self):
     resolver = nyx.traffic.ManualTrafficResolver()
     resolver.totals = [nyx.traffic.SocketTraffic(KEY, 100, 20)]
