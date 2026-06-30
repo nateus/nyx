@@ -50,9 +50,20 @@ def best_resolver():
     if bcc_status.state == 'available' or resolver == 'bcc':
       return bcc_resolver
 
-    return UnavailableTrafficResolver(bcc_status.reason)
+    return UnavailableTrafficResolver(bcc_status.reason if bcc_status.reason else 'bcc_unavailable')
 
   return UnavailableTrafficResolver('no_supported_backend')
+
+
+def unavailable_reason(status, fallback = 'unknown'):
+  if status is None:
+    return fallback
+  elif status.reason:
+    return status.reason
+  elif status.state == 'available':
+    return 'sample_unavailable_with_available_status'
+  else:
+    return fallback
 
 
 class TrafficResolver(object):
@@ -65,10 +76,10 @@ class TrafficResolver(object):
 
 class UnavailableTrafficResolver(TrafficResolver):
   def __init__(self, reason):
-    self._status = TrafficStatus('unavailable', reason)
+    self._status = TrafficStatus('unavailable', reason if reason else 'unavailable')
 
   def status(self):
-    return self._status
+    return self._status if self._status else TrafficStatus('unavailable', 'backend_not_initialized')
 
 
 class DeltaTrafficResolver(TrafficResolver):

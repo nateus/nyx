@@ -22,6 +22,15 @@ class TestTraffic(unittest.TestCase):
   def test_connection_key(self):
     self.assertEqual(('127.0.0.1', 3531, '75.119.206.243', 22, 'tcp'), KEY)
 
+  def test_unavailable_reason(self):
+    self.assertEqual('bcc_missing', nyx.traffic.unavailable_reason(nyx.traffic.TrafficStatus('unavailable', 'bcc_missing')))
+    self.assertEqual('sample_unavailable_with_available_status', nyx.traffic.unavailable_reason(nyx.traffic.TrafficStatus('available', None)))
+    self.assertEqual('unknown', nyx.traffic.unavailable_reason(nyx.traffic.TrafficStatus('unavailable', None)))
+
+  def test_unavailable_resolver_has_reason(self):
+    resolver = nyx.traffic.UnavailableTrafficResolver(None)
+    self.assertEqual(nyx.traffic.TrafficStatus('unavailable', 'unavailable'), resolver.status())
+
   def test_delta_resolver(self):
     resolver = nyx.traffic.ManualTrafficResolver()
     resolver.totals = [nyx.traffic.SocketTraffic(KEY, 100, 20)]

@@ -703,7 +703,7 @@ class ConnectionTracker(Daemon):
     with nyx.cache().write() as writer:
       if samples is None:
         writer.set_collector_status('traffic_counters', 'unavailable')
-        writer.set_collector_status('traffic_counters_reason', status.reason if status.reason else 'unknown')
+        writer.set_collector_status('traffic_counters_reason', nyx.traffic.unavailable_reason(status))
         return
 
       writer.set_collector_status('traffic_counters', 'available')
