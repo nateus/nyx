@@ -765,8 +765,8 @@ def _traffic_label(line):
   if nyx.cache().collector_status('traffic_counters') == 'available':
     return str_tools.size_label(0, 1)
 
-  reason = nyx.cache().collector_status('traffic_counters_reason')
-  return 'unavailable%s' % (': %s' % reason if reason else '')
+  reason = nyx.cache().collector_status('traffic_counters_reason', 'unknown') or 'unknown'
+  return 'unavailable: %s' % reason
 
 
 def _draw_data_sent_column(subwindow, x, y, line, width, attr):
